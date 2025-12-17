@@ -63,29 +63,45 @@ pipeline {
             steps {
                 echo '🐳 ÉTAPE 3: Construction et push de l\'image Docker'
                 script {
-                    sh 'docker --version'
+                    // Build the image first
+                    sh '''
+                        echo "Building Docker image..."
+                        docker build -t ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG} .
+                        docker tag ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG} \\
+                                   ${DOCKER_USERNAME}/${IMAGE_NAME}:latest
+                        echo "✅ Images built and tagged"
+                    '''
 
-                    // USING DOCKER PIPELINE PLUGIN CORRECTLY
-                    docker.withRegistry("https://${env.DOCKER_REGISTRY}", "${env.DOCKERHUB_CREDS}") {
-                        docker.build("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}")
+                    // Login and push in ONE credential context
+                    withCredentials([usernamePassword(
+                        credentialsId: "${env.DOCKERHUB_CREDS}",
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh '''
+                            echo "Logging into Docker Hub..."
+                            echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                        sh """
-                            docker tag ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG} \\
-                                   ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:latest
-                        """
+                            echo "Pushing ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG}..."
+                            docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG}
 
-                        docker.image("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}").push()
-                        docker.image("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:latest").push()
+                            echo "Pushing ${DOCKER_USERNAME}/${IMAGE_NAME}:latest..."
+                            docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:latest
+
+                            echo "✅ Push successful to Docker Hub!"
+                        '''
                     }
 
-                    sh """
-                        echo "Images Docker créées :"
-                        docker images | grep ${env.DOCKER_USERNAME} || true
+                    // Verification
+                    sh '''
+                        echo "=== VERIFICATION ==="
+                        echo "Images on local machine:"
+                        docker images | grep ${DOCKER_USERNAME} || true
 
                         echo " "
-                        echo "Tester l'image :"
-                        docker run --rm ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG} java -version 2>/dev/null || echo "Test non disponible"
-                    """
+                        echo "Testing image execution:"
+                        docker run --rm ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG} java -version 2>/dev/null || echo "Java version check skipped"
+                    '''
                 }
             }
         }
@@ -96,23 +112,11 @@ pipeline {
                 script {
                     sh """
                         echo "=== SIMULATION DE DÉPLOIEMENT ==="
-                        echo "1. Vérification de l'infrastructure..."
-                        echo "2. Application: ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
-                        echo "3. Environnement: Développement"
-                        echo "4. Port: 8080"
-                        echo "5. Réplicas: 1"
-                        echo " "
-
-                        echo "Commande de déploiement :"
-                        echo "kubectl apply -f deployment.yaml"
-                        echo "kubectl set image deployment/tp-cafe tp-cafe=${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
-                        echo "kubectl rollout status deployment/tp-cafe"
-
-                        echo " "
-                        echo "Vérification :"
-                        echo "kubectl get pods"
-                        echo "kubectl get services"
-                        echo "curl http://tp-cafe-service:8080/health"
+                        echo "1. Application: ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
+                        echo "2. Déploiement Kubernetes simulé"
+                        echo "3. Commandes d'exemple :"
+                        echo "   kubectl apply -f deployment.yaml"
+                        echo "   kubectl get pods"
                     """
 
                     writeFile file: 'deployment.yaml', text: """
@@ -135,18 +139,6 @@ spec:
         image: ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}
         ports:
         - containerPort: 8080
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: tp-cafe-service
-spec:
-  selector:
-    app: tp-cafe
-  ports:
-  - port: 80
-    targetPort: 8080
-  type: LoadBalancer
 """
 
                     sh '''
