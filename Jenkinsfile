@@ -20,14 +20,14 @@ pipeline {
                 echo '📥 ÉTAPE 1: Checkout du code source depuis Git'
                 checkout([
                     $class: 'GitSCM',
-                    branches: [[name: '*/main']],
+                    branches: [[name: '*/master']],  // CHANGÉ: 'main' → 'master'
                     extensions: [],
                     userRemoteConfigs: [[
                         url: 'https://github.com/haideradolfo/Devops.git',
                         credentialsId: "${env.GIT_CREDS}"
                     ]]
                 ])
-                
+
                 // Afficher les fichiers checkoutés
                 sh '''
                     echo "Contenu du répertoire :"
@@ -38,7 +38,7 @@ pipeline {
                 '''
             }
         }
-        
+
         // ÉTAPE 2: Build avec Maven
         stage('Build avec Maven') {
             steps {
@@ -46,29 +46,29 @@ pipeline {
                 sh '''
                     echo "Version de Maven :"
                     mvn --version || echo "Maven non installé"
-                    
+
                     echo " "
                     echo "Compilation du projet..."
                     mvn clean compile
-                    
+
                     echo " "
                     echo "Exécution des tests..."
                     mvn test
-                    
+
                     echo " "
                     echo "Packaging..."
                     mvn package -DskipTests
-                    
+
                     echo " "
                     echo "Fichiers générés :"
                     ls -la target/
                 '''
-                
+
                 // Archiver le JAR
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
-        
+
         // ÉTAPE 3: Build & Push Docker Image
         stage('Build & Push Docker Image') {
             steps {
@@ -76,7 +76,7 @@ pipeline {
                 script {
                     // Vérifier Docker
                     sh 'docker --version'
-                    
+
                     // Se connecter à Docker Hub
                     withCredentials([usernamePassword(
                         credentialsId: "${env.DOCKERHUB_CREDS}",
@@ -87,64 +87,64 @@ pipeline {
                             docker login -u '$DOCKER_USER' -p '$DOCKER_PASS'
                         """
                     }
-                    
+
                     // Construire l'image Docker
                     docker.build("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}")
-                    
+
                     // Tagger aussi comme latest
                     sh """
-                        docker tag ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG} \
-                               ${DOCKER_USERNAME}/${IMAGE_NAME}:latest
+                        docker tag ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG} \
+                               ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:latest
                     """
-                    
+
                     // Pousser vers Docker Hub
                     docker.withRegistry("https://${env.DOCKER_REGISTRY}", "${env.DOCKERHUB_CREDS}") {
                         docker.image("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}").push()
                         docker.image("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:latest").push()
                     }
-                    
+
                     // Afficher les images
-                    sh '''
+                    sh """
                         echo "Images Docker créées :"
-                        docker images | grep ${DOCKER_USERNAME} || true
-                        
+                        docker images | grep ${env.DOCKER_USERNAME} || true
+
                         echo " "
                         echo "Tester l'image :"
-                        docker run --rm ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG} java -version 2>/dev/null || echo "Test non disponible"
-                    '''
+                        docker run --rm ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG} java -version 2>/dev/null || echo "Test non disponible"
+                    """
                 }
             }
         }
-        
+
         // ÉTAPE 4: Déployer sur cluster
         stage('Déployer sur cluster') {
             steps {
                 echo '🚀 ÉTAPE 4: Déploiement sur cluster (simulation)'
                 script {
                     // Simulation de déploiement
-                    sh '''
+                    sh """
                         echo "=== SIMULATION DE DÉPLOIEMENT ==="
                         echo "1. Vérification de l'infrastructure..."
-                        echo "2. Application: ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG}"
+                        echo "2. Application: ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
                         echo "3. Environnement: Développement"
                         echo "4. Port: 8080"
                         echo "5. Réplicas: 1"
                         echo " "
-                        
+
                         # Commande de déploiement simulée
                         echo "Commande de déploiement :"
                         echo "kubectl apply -f deployment.yaml"
-                        echo "kubectl set image deployment/tp-cafe tp-cafe=${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG}"
+                        echo "kubectl set image deployment/tp-cafe tp-cafe=${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
                         echo "kubectl rollout status deployment/tp-cafe"
-                        
+
                         # Vérification simulée
                         echo " "
                         echo "Vérification :"
                         echo "kubectl get pods"
                         echo "kubectl get services"
                         echo "curl http://tp-cafe-service:8080/health"
-                    '''
-                    
+                    """
+
                     // Créer un fichier de déploiement Kubernetes (exemple)
                     writeFile file: 'deployment.yaml', text: """
 apiVersion: apps/v1
@@ -179,7 +179,7 @@ spec:
     targetPort: 8080
   type: LoadBalancer
 """
-                    
+
                     // Afficher le fichier créé
                     sh '''
                         echo " "
@@ -190,24 +190,25 @@ spec:
             }
         }
     }
-    
+
     post {
         always {
             echo '📊 ===== RÉSUMÉ DU PIPELINE ====='
-            sh '''
-                echo "Durée totale: ${currentBuild.durationString}"
-                echo "Build #${BUILD_NUMBER}"
-                echo "Statut: ${currentBuild.currentResult}"
-                echo " "
-                echo "Image Docker créée: ${DOCKER_USERNAME}/${IMAGE_NAME}:${DOCKER_TAG}"
-                echo "URL Docker Hub: https://hub.docker.com/r/${DOCKER_USERNAME}/${IMAGE_NAME}"
-            '''
+            script {
+                // Utilisez script{} pour accéder aux variables Jenkins
+                sh """
+                    echo "Durée totale: ${currentBuild.durationString}"
+                    echo "Build #${BUILD_NUMBER}"
+                    echo "Statut: ${currentBuild.currentResult}"
+                    echo " "
+                    echo "Image Docker créée: ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
+                    echo "URL Docker Hub: https://hub.docker.com/r/${env.DOCKER_USERNAME}/${env.IMAGE_NAME}"
+                """
+            }
         }
-        
+
         success {
             echo '✅ PIPELINE RÉUSSI !'
-            // Ici vous pouvez ajouter des notifications
-            // emailext, slackSend, etc.
         }
         
         failure {
