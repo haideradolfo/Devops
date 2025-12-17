@@ -2,25 +2,22 @@ pipeline {
     agent any
     
     environment {
-        // Variables d'environnement
         DOCKER_REGISTRY = 'docker.io'
-        DOCKER_USERNAME = 'haiderschenato02'  // Votre username Docker Hub
+        DOCKER_USERNAME = 'haiderschenato02'
         IMAGE_NAME = 'tp-cafe-app'
         DOCKER_TAG = "${env.BUILD_NUMBER}"
-        
-        // Credentials IDs (à créer dans Jenkins)
+
         DOCKERHUB_CREDS = 'docker-hub-credentials'
         GIT_CREDS = 'github-credentials'
     }
-    
+
     stages {
-        // ÉTAPE 1: Checkout code
         stage('Checkout Code') {
             steps {
                 echo '📥 ÉTAPE 1: Checkout du code source depuis Git'
                 checkout([
                     $class: 'GitSCM',
-                    branches: [[name: '*/master']],  // CHANGÉ: 'main' → 'master'
+                    branches: [[name: '*/master']],
                     extensions: [],
                     userRemoteConfigs: [[
                         url: 'https://github.com/haideradolfo/Devops.git',
@@ -28,7 +25,6 @@ pipeline {
                     ]]
                 ])
 
-                // Afficher les fichiers checkoutés
                 sh '''
                     echo "Contenu du répertoire :"
                     ls -la
@@ -39,13 +35,12 @@ pipeline {
             }
         }
 
-        // ÉTAPE 2: Build avec Maven
         stage('Build avec Maven') {
             steps {
                 echo '🔨 ÉTAPE 2: Construction du projet avec Maven'
                 sh '''
                     echo "Version de Maven :"
-                    mvn --version || echo "Maven non installé"
+                    mvn --version
 
                     echo " "
                     echo "Compilation du projet..."
@@ -53,53 +48,36 @@ pipeline {
 
                     echo " "
                     echo "Packaging..."
-                    mvn package -DskipTests  # Sauter les tests
+                    mvn package -DskipTests
 
                     echo " "
                     echo "Fichiers générés :"
                     ls -la target/
                 '''
 
-                // Archiver le JAR
                 archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
             }
         }
 
-        // ÉTAPE 3: Build & Push Docker Image
         stage('Build & Push Docker Image') {
             steps {
                 echo '🐳 ÉTAPE 3: Construction et push de l\'image Docker'
                 script {
-                    // Vérifier Docker
                     sh 'docker --version'
 
-                    // Se connecter à Docker Hub
-                    withCredentials([usernamePassword(
-                        credentialsId: "${env.DOCKERHUB_CREDS}",
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )]) {
-                        sh """
-                            docker login -u '$DOCKER_USER' -p '$DOCKER_PASS'
-                        """
-                    }
-
-                    // Construire l'image Docker
-                    docker.build("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}")
-
-                    // Tagger aussi comme latest
-                    sh """
-                        docker tag ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG} \
-                               ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:latest
-                    """
-
-                    // Pousser vers Docker Hub
+                    // USING DOCKER PIPELINE PLUGIN CORRECTLY
                     docker.withRegistry("https://${env.DOCKER_REGISTRY}", "${env.DOCKERHUB_CREDS}") {
+                        docker.build("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}")
+
+                        sh """
+                            docker tag ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG} \\
+                                   ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:latest
+                        """
+
                         docker.image("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}").push()
                         docker.image("${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:latest").push()
                     }
 
-                    // Afficher les images
                     sh """
                         echo "Images Docker créées :"
                         docker images | grep ${env.DOCKER_USERNAME} || true
@@ -112,12 +90,10 @@ pipeline {
             }
         }
 
-        // ÉTAPE 4: Déployer sur cluster
         stage('Déployer sur cluster') {
             steps {
                 echo '🚀 ÉTAPE 4: Déploiement sur cluster (simulation)'
                 script {
-                    // Simulation de déploiement
                     sh """
                         echo "=== SIMULATION DE DÉPLOIEMENT ==="
                         echo "1. Vérification de l'infrastructure..."
@@ -127,13 +103,11 @@ pipeline {
                         echo "5. Réplicas: 1"
                         echo " "
 
-                        # Commande de déploiement simulée
                         echo "Commande de déploiement :"
                         echo "kubectl apply -f deployment.yaml"
                         echo "kubectl set image deployment/tp-cafe tp-cafe=${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
                         echo "kubectl rollout status deployment/tp-cafe"
 
-                        # Vérification simulée
                         echo " "
                         echo "Vérification :"
                         echo "kubectl get pods"
@@ -141,7 +115,6 @@ pipeline {
                         echo "curl http://tp-cafe-service:8080/health"
                     """
 
-                    // Créer un fichier de déploiement Kubernetes (exemple)
                     writeFile file: 'deployment.yaml', text: """
 apiVersion: apps/v1
 kind: Deployment
@@ -176,7 +149,6 @@ spec:
   type: LoadBalancer
 """
 
-                    // Afficher le fichier créé
                     sh '''
                         echo " "
                         echo "Fichier de déploiement généré :"
@@ -191,7 +163,6 @@ spec:
         always {
             echo '📊 ===== RÉSUMÉ DU PIPELINE ====='
             script {
-                // Utilisez script{} pour accéder aux variables Jenkins
                 sh """
                     echo "Durée totale: ${currentBuild.durationString}"
                     echo "Build #${BUILD_NUMBER}"
@@ -206,13 +177,12 @@ spec:
         success {
             echo '✅ PIPELINE RÉUSSI !'
         }
-        
+
         failure {
             echo '❌ PIPELINE ÉCHOUÉ !'
         }
-        
+
         cleanup {
-            // Nettoyage
             sh '''
                 echo "Nettoyage des ressources temporaires..."
                 docker container prune -f 2>/dev/null || true
