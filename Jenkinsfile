@@ -23,7 +23,7 @@ pipeline {
                     branches: [[name: '*/main']],
                     extensions: [],
                     userRemoteConfigs: [[
-                        url: 'https://github.com/haideradolfo/TPCafe_Schenato_Haider.git',
+                        url: 'https://github.com/haideradolfo/Devops.git',
                         credentialsId: "${env.GIT_CREDS}"
                     ]]
                 ])
