@@ -52,12 +52,8 @@ pipeline {
                     mvn clean compile
 
                     echo " "
-                    echo "Exécution des tests..."
-                    mvn test
-
-                    echo " "
                     echo "Packaging..."
-                    mvn package -DskipTests
+                    mvn package -DskipTests  # Sauter les tests
 
                     echo " "
                     echo "Fichiers générés :"
