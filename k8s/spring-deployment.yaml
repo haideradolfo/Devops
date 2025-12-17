@@ -1,0 +1,81 @@
+---
+# 1. ConfigMap - Configuration Spring Boot
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spring-config
+  labels:
+    app: spring-app
+    project: tp-cafe
+data:
+  SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-service:3306/springdb"
+  SPRING_PROFILES_ACTIVE: "production"
+  SERVER_PORT: "8080"
+  LOGGING_LEVEL_ROOT: "INFO"
+  # Optimisations pour conteneurs
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "10"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "2"
+---
+# 2. Secret - Credentials MySQL
+apiVersion: v1
+kind: Secret
+metadata:
+  name: spring-secret
+  labels:
+    app: spring-app
+    project: tp-cafe
+type: Opaque
+data:
+  # Encodez vos vrais credentials avec: echo -n "valeur" | base64
+  SPRING_DATASOURCE_USERNAME: cm9vdA==           # "root" en base64
+  SPRING_DATASOURCE_PASSWORD: cm9vdDEyMw==       # "root123" en base64
+  # SPRING_DATASOURCE_USERNAME: c3ByaW5n         # "spring" (si vous utilisez l'utilisateur spring)
+  # SPRING_DATASOURCE_PASSWORD: c3ByaW5nMTIz     # "spring123"
+---
+# 3. Deployment Spring Boot
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spring-app-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: spring-app
+  template:
+    metadata:
+      labels:
+        app: spring-app
+    spec:
+      initContainers:
+        - name: wait-for-mysql
+          image: busybox:1.35
+          command: ['sh', '-c', 'until nc -z mysql-service 3306; do echo "Waiting for MySQL..."; sleep 5; done']
+      containers:
+        - name: spring-app
+          image: spring-app:1.0
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8084  # ⬅️ ICI: 8084 au lieu de 8080
+              name: http
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://mysql-service:3306/springdb"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "root"
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "root123"
+---
+# 4. Service NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: spring-service
+spec:
+  selector:
+    app: spring-app
+  ports:
+    - port: 8084        # ⬅️ ICI: 8084
+      targetPort: 8084  # ⬅️ ICI: 8084
+      nodePort: 30080   # Garde 30080 ou change si tu veux
+  type: NodePort

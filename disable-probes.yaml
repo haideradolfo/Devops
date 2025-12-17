@@ -1,0 +1,11 @@
+<< 'EOF'
+spec:
+template:
+    spec:
+      containers:
+      - name: spring-app
+        readinessProbe: null
+        livenessProbe: null
+        startupProbe: null
+EOF
+
