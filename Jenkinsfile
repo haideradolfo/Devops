@@ -9,6 +9,9 @@ pipeline {
 
         DOCKERHUB_CREDS = 'docker-hub-credentials'
         GIT_CREDS = 'github-credentials'
+
+        // Ajout pour SonarQube
+        SONAR_PROJECT_KEY = 'tp-cafe-app'
     }
 
     stages {
@@ -59,9 +62,30 @@ pipeline {
             }
         }
 
+        // ✅ NOUVELLE ÉTAPE AJOUTÉE ICI
+        stage('Analyse SonarQube') {
+            steps {
+                echo '🔍 ÉTAPE 3: Analyse de la qualité du code avec SonarQube'
+                script {
+                    withSonarQubeEnv('SonarQube') {
+                        sh '''
+                            echo "Lancement de l'analyse SonarQube..."
+                            mvn sonar:sonar \
+                              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                              -Dsonar.projectName="TP Cafe Application"
+
+                            echo " "
+                            echo "✅ Analyse SonarQube terminée !"
+                            echo "Consultez les résultats sur: http://localhost:9000"
+                        '''
+                    }
+                }
+            }
+        }
+
         stage('Build & Push Docker Image') {
             steps {
-                echo '🐳 ÉTAPE 3: Construction et push de l\'image Docker'
+                echo '🐳 ÉTAPE 4: Construction et push de l\'image Docker'
                 script {
                     // Build the image first
                     sh '''
@@ -108,7 +132,7 @@ pipeline {
 
         stage('Déployer sur cluster') {
             steps {
-                echo '🚀 ÉTAPE 4: Déploiement sur cluster (simulation)'
+                echo '🚀 ÉTAPE 5: Déploiement sur cluster (simulation)'
                 script {
                     sh """
                         echo "=== SIMULATION DE DÉPLOIEMENT ==="
@@ -162,6 +186,8 @@ spec:
                     echo " "
                     echo "Image Docker créée: ${env.DOCKER_USERNAME}/${env.IMAGE_NAME}:${env.DOCKER_TAG}"
                     echo "URL Docker Hub: https://hub.docker.com/r/${env.DOCKER_USERNAME}/${env.IMAGE_NAME}"
+                    echo " "
+                    echo "Analyse SonarQube: http://localhost:9000/dashboard?id=${SONAR_PROJECT_KEY}"
                 """
             }
         }
